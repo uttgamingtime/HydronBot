@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Edit Message",
+name: "Play File",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,15 @@ name: "Edit Message",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Messaging",
+section: "Audio Control",
+
+//---------------------------------------------------------------------
+// Requires Audio Libraries
+//
+// If 'true', this action requires audio libraries to run.
+//---------------------------------------------------------------------
+
+requiresAudioLibraries: true,
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,14 +31,7 @@ section: "Messaging",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const names = [
-		'Command Message', 
-		'Temp Variable', 
-		'Server Variable', 
-		'Global Variable'
-	];
-	const index = parseInt(data.storage);
-	return data.storage === "0" ? `${names[index]}` : `${names[index]} (${data.varName})`;
+	return `${data.url}`;
 },
 
 //---------------------------------------------------------------------
@@ -41,7 +42,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["storage", "varName", "message"],
+fields: ["url", "seek", "volume", "passes", "bitrate", "type"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -62,26 +63,27 @@ fields: ["storage", "varName", "message"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<p>
-		<u>Note:</u><br>
-		Bots are only able to edit their own messages.
-	</p>
-</div><br>
+	Local URL:<br>
+	<input id="url" class="round" type="text" value="resources/"><br>
+</div>
+<div style="float: left; width: 50%;">
+	Seek Position:<br>
+	<input id="seek" class="round" type="text" value="0"><br>
+	Passes:<br>
+	<input id="passes" class="round" type="text" value="1">
+</div>
+<div style="float: right; width: 50%;">
+	Volume (0 = min; 100 = max):<br>
+	<input id="volume" class="round" type="text" placeholder="Leave blank for automatic..."><br>
+	Bitrate:<br>
+	<input id="bitrate" class="round" type="text" placeholder="Leave blank for automatic...">
+</div><br><br><br><br><br><br><br>
 <div>
-	<div style="float: left; width: 35%;">
-		Source Message:<br>
-		<select id="storage" class="round" onchange="glob.messageChange(this, 'varNameContainer')">
-			${data.messages[isEvent ? 1 : 0]}
-		</select>
-	</div>
-	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
-		Variable Name:<br>
-		<input id="varName" class="round" type="text" list="variableList"><br>
-	</div>
-</div><br><br><br>
-<div style="padding-top: 8px;">
-	Edited Message Content:<br>
-	<textarea id="message" rows="9" style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
+	Play Type:<br>
+	<select id="type" class="round" style="width: 90%;">
+		<option value="0" selected>Add to Queue</option>
+		<option value="1">Play Immediately</option>
+	</select>
 </div>`
 },
 
@@ -94,9 +96,6 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
-	const {glob, document} = this;
-
-	glob.messageChange(document.getElementById('storage'), 'varNameContainer');
 },
 
 //---------------------------------------------------------------------
@@ -109,22 +108,36 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const storage = parseInt(data.storage);
-	const varName = this.evalMessage(data.varName, cache);
-	const message = this.getMessage(storage, varName, cache);
-	if(Array.isArray(message)) {
-		const content = this.evalMessage(data.message, cache);
-		this.callListFunc(message, 'edit', [content]).then(function() {
-			this.callNextAction(cache);
-		}.bind(this));
-	} else if(message && message.delete) {
-		const content = this.evalMessage(data.message, cache);
-		message.edit(content).then(function() {
-			this.callNextAction(cache);
-		}.bind(this)).catch(this.displayError.bind(this, data, cache));
-	} else {
-		this.callNextAction(cache);
+	const Audio = this.getDBM().Audio;
+	const options = {};
+	if(data.seek) {
+		options.seek = parseInt(this.evalMessage(data.seek, cache));
 	}
+	if(data.volume) {
+		options.volume = parseInt(this.evalMessage(data.volume, cache)) / 100;
+	} else if(cache.server) {
+		options.volume = Audio.volumes[cache.server.id] || 0.5;
+	} else {
+		options.volume = 0.5;
+	}
+	if(data.passes) {
+		options.passes = parseInt(this.evalMessage(data.passes, cache));
+	}
+	if(data.bitrate) {
+		options.bitrate = parseInt(this.evalMessage(data.bitrate, cache));
+	} else {
+		options.bitrate = 'auto';
+	}
+	const url = this.evalMessage(data.url, cache);
+	if(url) {
+		const info = ['file', options, url];
+		if(data.type === "0") {
+			Audio.addToQueue(info, cache);
+		} else if(cache.server && cache.server.id !== undefined) {
+			Audio.playItem(info, cache.server.id);
+		}
+	}
+	this.callNextAction(cache);
 },
 
 //---------------------------------------------------------------------

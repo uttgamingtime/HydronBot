@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Edit Message",
+name: "Set Member Voice Channel",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Edit Message",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Messaging",
+section: "Member Control",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,14 +23,8 @@ section: "Messaging",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const names = [
-		'Command Message', 
-		'Temp Variable', 
-		'Server Variable', 
-		'Global Variable'
-	];
-	const index = parseInt(data.storage);
-	return data.storage === "0" ? `${names[index]}` : `${names[index]} (${data.varName})`;
+	const members = ['Mentioned User', 'Command Author', 'Temp Variable', 'Server Variable', 'Global Variable'];
+	return `${members[parseInt(data.member)]}`;
 },
 
 //---------------------------------------------------------------------
@@ -41,7 +35,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["storage", "varName", "message"],
+fields: ["member", "varName", "channel", "varName2"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -61,17 +55,11 @@ fields: ["storage", "varName", "message"],
 
 html: function(isEvent, data) {
 	return `
-<div>
-	<p>
-		<u>Note:</u><br>
-		Bots are only able to edit their own messages.
-	</p>
-</div><br>
-<div>
+<div style="padding-top: 8px;">
 	<div style="float: left; width: 35%;">
-		Source Message:<br>
-		<select id="storage" class="round" onchange="glob.messageChange(this, 'varNameContainer')">
-			${data.messages[isEvent ? 1 : 0]}
+		Source Member:<br>
+		<select id="member" class="round" onchange="glob.memberChange(this, 'varNameContainer')">
+			${data.members[isEvent ? 1 : 0]}
 		</select>
 	</div>
 	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
@@ -79,9 +67,17 @@ html: function(isEvent, data) {
 		<input id="varName" class="round" type="text" list="variableList"><br>
 	</div>
 </div><br><br><br>
-<div style="padding-top: 8px;">
-	Edited Message Content:<br>
-	<textarea id="message" rows="9" style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
+<div>
+	<div style="float: left; width: 35%;">
+		Source Voice Channel:<br>
+		<select id="channel" name="second-list" class="round" onchange="glob.channelChange(this, 'varNameContainer2')">
+			${data.channels[isEvent ? 1 : 0]}
+		</select>
+	</div>
+	<div id="varNameContainer2" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName2" class="round" type="text" list="variableList2"><br>
+	</div>
 </div>`
 },
 
@@ -96,7 +92,8 @@ html: function(isEvent, data) {
 init: function() {
 	const {glob, document} = this;
 
-	glob.messageChange(document.getElementById('storage'), 'varNameContainer');
+	glob.memberChange(document.getElementById('member'), 'varNameContainer');
+	glob.channelChange(document.getElementById('channel'), 'varNameContainer2');
 },
 
 //---------------------------------------------------------------------
@@ -109,17 +106,20 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const storage = parseInt(data.storage);
+	const storage = parseInt(data.channel);
 	const varName = this.evalMessage(data.varName, cache);
-	const message = this.getMessage(storage, varName, cache);
-	if(Array.isArray(message)) {
-		const content = this.evalMessage(data.message, cache);
-		this.callListFunc(message, 'edit', [content]).then(function() {
+	const channel = this.getChannel(storage, varName, cache);
+
+	const storage2 = parseInt(data.member);
+	const varName2 = this.evalMessage(data.varName2, cache);
+	const member = this.getMember(storage2, varName2, cache);
+
+	if(Array.isArray(member)) {
+		this.callListFunc(member, 'setVoiceChannel', [channel]).then(function() {
 			this.callNextAction(cache);
 		}.bind(this));
-	} else if(message && message.delete) {
-		const content = this.evalMessage(data.message, cache);
-		message.edit(content).then(function() {
+	} else if(member && member.setVoiceChannel) {
+		member.setVoiceChannel(channel).then(function() {
 			this.callNextAction(cache);
 		}.bind(this)).catch(this.displayError.bind(this, data, cache));
 	} else {

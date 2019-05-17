@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Edit Message",
+name: "Save Variable",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Edit Message",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Messaging",
+section: "Other Stuff",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,14 +23,8 @@ section: "Messaging",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const names = [
-		'Command Message', 
-		'Temp Variable', 
-		'Server Variable', 
-		'Global Variable'
-	];
-	const index = parseInt(data.storage);
-	return data.storage === "0" ? `${names[index]}` : `${names[index]} (${data.varName})`;
+	const storage = ['', '', 'Server Variable', 'Global Variable'];
+	return `${storage[parseInt(data.storage)]} (${data.varName})`;
 },
 
 //---------------------------------------------------------------------
@@ -41,7 +35,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["storage", "varName", "message"],
+fields: ["storage", "varName"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -62,26 +56,17 @@ fields: ["storage", "varName", "message"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<p>
-		<u>Note:</u><br>
-		Bots are only able to edit their own messages.
-	</p>
-</div><br>
-<div>
 	<div style="float: left; width: 35%;">
-		Source Message:<br>
-		<select id="storage" class="round" onchange="glob.messageChange(this, 'varNameContainer')">
-			${data.messages[isEvent ? 1 : 0]}
+		Source Variable:<br>
+		<select id="storage" class="round" onchange="glob.refreshVariableList(this)">
+			<option value="2" selected>Server Variable</option>
+			<option value="3">Global Variable</option>
 		</select>
 	</div>
-	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
+	<div id="varNameContainer" style="float: right; width: 60%;">
 		Variable Name:<br>
-		<input id="varName" class="round" type="text" list="variableList"><br>
+		<input id="varName" class="round" type="text" list="variableList">
 	</div>
-</div><br><br><br>
-<div style="padding-top: 8px;">
-	Edited Message Content:<br>
-	<textarea id="message" rows="9" style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
 </div>`
 },
 
@@ -96,7 +81,7 @@ html: function(isEvent, data) {
 init: function() {
 	const {glob, document} = this;
 
-	glob.messageChange(document.getElementById('storage'), 'varNameContainer');
+	glob.refreshVariableList(document.getElementById('storage'));
 },
 
 //---------------------------------------------------------------------
@@ -109,22 +94,16 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const storage = parseInt(data.storage);
+	const Files = this.getDBM().Files;
+	const type = parseInt(data.storage);
 	const varName = this.evalMessage(data.varName, cache);
-	const message = this.getMessage(storage, varName, cache);
-	if(Array.isArray(message)) {
-		const content = this.evalMessage(data.message, cache);
-		this.callListFunc(message, 'edit', [content]).then(function() {
-			this.callNextAction(cache);
-		}.bind(this));
-	} else if(message && message.delete) {
-		const content = this.evalMessage(data.message, cache);
-		message.edit(content).then(function() {
-			this.callNextAction(cache);
-		}.bind(this)).catch(this.displayError.bind(this, data, cache));
-	} else {
-		this.callNextAction(cache);
+	const item = this.getVariable(type, varName, cache);
+	if(data.storage === '3') {
+		Files.saveGlobalVariable(varName, item);
+	} else if(cache.server) {
+		Files.saveServerVariable(cache.server.id, varName, item);
 	}
+	this.callNextAction(cache);
 },
 
 //---------------------------------------------------------------------

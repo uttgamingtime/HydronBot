@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Edit Message",
+name: "Send TTS Message",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -23,14 +23,20 @@ section: "Messaging",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const names = [
-		'Command Message', 
-		'Temp Variable', 
-		'Server Variable', 
-		'Global Variable'
-	];
-	const index = parseInt(data.storage);
-	return data.storage === "0" ? `${names[index]}` : `${names[index]} (${data.varName})`;
+	const channels = ['Same Channel', 'Command Author', 'Mentioned User', 'Mentioned Channel', 'Default Channel', 'Temp Variable', 'Server Variable', 'Global Variable'];
+	return `${channels[parseInt(data.channel)]}: "${data.message.replace(/[\n\r]+/, '')}"`;
+},
+
+//---------------------------------------------------------------------
+// Action Storage Function
+//
+// Stores the relevant variable info for the editor.
+//---------------------------------------------------------------------
+
+variableStorage: function(data, varType) {
+	const type = parseInt(data.storage);
+	if(type !== varType) return;
+	return ([data.varName2, 'Message']);
 },
 
 //---------------------------------------------------------------------
@@ -41,7 +47,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["storage", "varName", "message"],
+fields: ["channel", "varName", "message", "storage", "varName2"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -62,16 +68,10 @@ fields: ["storage", "varName", "message"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<p>
-		<u>Note:</u><br>
-		Bots are only able to edit their own messages.
-	</p>
-</div><br>
-<div>
 	<div style="float: left; width: 35%;">
-		Source Message:<br>
-		<select id="storage" class="round" onchange="glob.messageChange(this, 'varNameContainer')">
-			${data.messages[isEvent ? 1 : 0]}
+		Send To:<br>
+		<select id="channel" class="round" onchange="glob.sendTargetChange(this, 'varNameContainer')">
+			${data.sendTargets[isEvent ? 1 : 0]}
 		</select>
 	</div>
 	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
@@ -80,9 +80,21 @@ html: function(isEvent, data) {
 	</div>
 </div><br><br><br>
 <div style="padding-top: 8px;">
-	Edited Message Content:<br>
-	<textarea id="message" rows="9" style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
-</div>`
+	Message:<br>
+	<textarea id="message" rows="9" placeholder="Insert message here..." style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
+</div><br>
+<div>
+	<div style="float: left; width: 35%;">
+		Store In:<br>
+		<select id="storage" class="round" onchange="glob.variableChange(this, 'varNameContainer2')">
+			${data.variables[0]}
+		</select>
+	</div>
+	<div id="varNameContainer2" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName2" class="round" type="text">
+	</div>
+</div>`;
 },
 
 //---------------------------------------------------------------------
@@ -96,7 +108,8 @@ html: function(isEvent, data) {
 init: function() {
 	const {glob, document} = this;
 
-	glob.messageChange(document.getElementById('storage'), 'varNameContainer');
+	glob.sendTargetChange(document.getElementById('channel'), 'varNameContainer');
+	glob.variableChange(document.getElementById('storage'), 'varNameContainer2');
 },
 
 //---------------------------------------------------------------------
@@ -109,17 +122,25 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const storage = parseInt(data.storage);
+	const server = cache.server;
+	const msg = cache.msg;
+	const channel = parseInt(data.channel);
+	const message = data.message;
+	if(channel === undefined || message === undefined) return;
 	const varName = this.evalMessage(data.varName, cache);
-	const message = this.getMessage(storage, varName, cache);
-	if(Array.isArray(message)) {
-		const content = this.evalMessage(data.message, cache);
-		this.callListFunc(message, 'edit', [content]).then(function() {
+	const target = this.getSendTarget(channel, varName, cache);
+	if(Array.isArray(target)) {
+		this.callListFunc(target, 'send', [this.evalMessage(message, cache), {tts: true}]).then(function(resultMsg) {
+			const varName2 = this.evalMessage(data.varName2, cache);
+			const storage = parseInt(data.storage);
+			this.storeValue(resultMsg, storage, varName2, cache);
 			this.callNextAction(cache);
 		}.bind(this));
-	} else if(message && message.delete) {
-		const content = this.evalMessage(data.message, cache);
-		message.edit(content).then(function() {
+	} else if(target && target.send) {
+		target.send(this.evalMessage(message, cache), {tts: true}).then(function(resultMsg) {
+			const varName2 = this.evalMessage(data.varName2, cache);
+			const storage = parseInt(data.storage);
+			this.storeValue(resultMsg, storage, varName2, cache);
 			this.callNextAction(cache);
 		}.bind(this)).catch(this.displayError.bind(this, data, cache));
 	} else {

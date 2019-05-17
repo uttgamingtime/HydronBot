@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Edit Message",
+name: "Skip Queue",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Edit Message",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Messaging",
+section: "Audio Control",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,14 +23,7 @@ section: "Messaging",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const names = [
-		'Command Message', 
-		'Temp Variable', 
-		'Server Variable', 
-		'Global Variable'
-	];
-	const index = parseInt(data.storage);
-	return data.storage === "0" ? `${names[index]}` : `${names[index]} (${data.varName})`;
+	return `Skip ${data.amount} Items`;
 },
 
 //---------------------------------------------------------------------
@@ -41,7 +34,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["storage", "varName", "message"],
+fields: ["amount"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -61,28 +54,10 @@ fields: ["storage", "varName", "message"],
 
 html: function(isEvent, data) {
 	return `
-<div>
-	<p>
-		<u>Note:</u><br>
-		Bots are only able to edit their own messages.
-	</p>
-</div><br>
-<div>
-	<div style="float: left; width: 35%;">
-		Source Message:<br>
-		<select id="storage" class="round" onchange="glob.messageChange(this, 'varNameContainer')">
-			${data.messages[isEvent ? 1 : 0]}
-		</select>
-	</div>
-	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
-		Variable Name:<br>
-		<input id="varName" class="round" type="text" list="variableList"><br>
-	</div>
-</div><br><br><br>
-<div style="padding-top: 8px;">
-	Edited Message Content:<br>
-	<textarea id="message" rows="9" style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
-</div>`
+<div style="float: left; width: 80%;">
+	Amount to Skip:<br>
+	<input id="amount" class="round" value="1">
+</div>`;
 },
 
 //---------------------------------------------------------------------
@@ -94,9 +69,6 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
-	const {glob, document} = this;
-
-	glob.messageChange(document.getElementById('storage'), 'varNameContainer');
 },
 
 //---------------------------------------------------------------------
@@ -109,22 +81,25 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const storage = parseInt(data.storage);
-	const varName = this.evalMessage(data.varName, cache);
-	const message = this.getMessage(storage, varName, cache);
-	if(Array.isArray(message)) {
-		const content = this.evalMessage(data.message, cache);
-		this.callListFunc(message, 'edit', [content]).then(function() {
-			this.callNextAction(cache);
-		}.bind(this));
-	} else if(message && message.delete) {
-		const content = this.evalMessage(data.message, cache);
-		message.edit(content).then(function() {
-			this.callNextAction(cache);
-		}.bind(this)).catch(this.displayError.bind(this, data, cache));
-	} else {
-		this.callNextAction(cache);
+	const Audio = this.getDBM().Audio;
+	const server = cache.server;
+	let queue;
+	if(server) {
+		queue = Audio.queue[server.id];
+	} 
+	if(queue) {
+		const amount = parseInt(this.evalMessage(data.amount, cache));
+		let finalItem;
+		for(let i = 0; i < amount; i++) {
+			if(queue.length > 0) {
+				finalItem = queue.shift();
+			}
+		}
+		if(finalItem) {
+			Audio.playItem(finalItem, server.id);
+		}
 	}
+	this.callNextAction(cache);
 },
 
 //---------------------------------------------------------------------
